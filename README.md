@@ -1,3 +1,6 @@
+A download tool
+
+```
 Usage: xz3 [OPTIONS] <URL>
 
 Arguments:
@@ -9,3 +12,4 @@ Options:
   -m, --max-retry <MAX_RETRY>    Set the retry time [default: 10]
   -h, --help                     Print help
   -V, --version                  Print version
+```
