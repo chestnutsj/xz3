@@ -1,12 +1,13 @@
-use crate::download::file_handler::{download_save_file, DataChunk , checkout_filename , md5_check,verify_content_md5};
+use crate::download::file_handler::{
+    checkout_filename, download_save_file, md5_check, verify_content_md5, DataChunk,
+};
 use crate::download::status::Status;
-use log::{debug, info, warn,trace};
+use log::{debug, info, trace, warn};
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, Ordering,AtomicUsize};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::time::Duration;
 
- 
 use std::sync::{Arc, Mutex};
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
@@ -16,13 +17,11 @@ use futures_util::StreamExt;
 use indicatif::{ProgressBar, ProgressStyle};
 use reqwest::header::{HeaderValue, USER_AGENT};
 use reqwest::redirect::Policy;
+use reqwest_middleware::{ClientBuilder, ClientWithMiddleware, Middleware};
+use reqwest_retry::{policies::ExponentialBackoff, RetryTransientMiddleware};
 use tokio::sync::Semaphore;
-use reqwest_middleware::{ClientBuilder, Middleware, ClientWithMiddleware};
-use reqwest_retry::{RetryTransientMiddleware, policies::ExponentialBackoff};
 
 use serde::{Deserialize, Serialize};
-
-  
 
 const CHUNK_SIZE_LIMIT: u64 = 1024 * 1024;
 const MAX_RETRIES: usize = 5; // 定义最大重试次数
@@ -31,7 +30,7 @@ const SUFFIX: &str = "xz3";
 #[derive(Serialize, Deserialize, Debug, PartialEq, Eq)]
 pub struct DownloadTask {
     pub url: String,
-    pub file_name : String,
+    pub file_name: String,
     pub total_size: u64,
     pub chunk_size: u64,
     pub num_threads: usize,
@@ -71,7 +70,7 @@ impl DownloadTask {
         let permit = semaphore.acquire_owned().await.unwrap();
 
         let mut offset_start = start;
-        
+
         while offset_start < end {
             if exit.load(Ordering::SeqCst) {
                 break;
@@ -108,8 +107,8 @@ impl DownloadTask {
                                 // 数据读取错误，检查是否已达到最大重试次数
                                 if retries >= retry_count {
                                     sender
-                                    .send(DataChunk::new(start, vec![], offset_start))
-                                    .await?;
+                                        .send(DataChunk::new(start, vec![], offset_start))
+                                        .await?;
 
                                     return Err(anyhow!(
                                         "Failed to read response bytes after {} retries: {}",
@@ -128,8 +127,8 @@ impl DownloadTask {
                         // 请求发送错误，检查是否已达到最大重试次数
                         if retries >= retry_count {
                             sender
-                            .send(DataChunk::new(start, vec![], offset_start))
-                            .await?;
+                                .send(DataChunk::new(start, vec![], offset_start))
+                                .await?;
 
                             return Err(anyhow!(
                                 "Failed to send request after {} retries: {}",
@@ -149,10 +148,11 @@ impl DownloadTask {
         }
 
         if offset_start >= end {
-            debug!("Download chunk offset {} from  {} end {} flush", offset_start,start, end);
-            sender
-                .send(DataChunk::new(start, vec![], end))
-                .await?;
+            debug!(
+                "Download chunk offset {} from  {} end {} flush",
+                offset_start, start, end
+            );
+            sender.send(DataChunk::new(start, vec![], end)).await?;
         }
         drop(permit); // 任务结束时释放许可
         Ok(())
@@ -201,9 +201,12 @@ pub async fn simple_download(
     exit: Arc<AtomicBool>,
 ) -> Result<(), anyhow::Error> {
     let resp = client.get(&url.to_string()).send().await?;
-    
+
     if !resp.status().is_success() {
-        return Err(anyhow::format_err!("Request failed with status: {}", resp.status()));
+        return Err(anyhow::format_err!(
+            "Request failed with status: {}",
+            resp.status()
+        ));
     }
     let mut stream = resp.bytes_stream();
     let mut offset_start = 0;
@@ -212,15 +215,11 @@ pub async fn simple_download(
         let data = item?;
         last_offset = offset_start;
         let data_chunk = DataChunk::new(offset_start, data.to_vec(), 0);
-        sender
-            .send(data_chunk)
-            .await?;
+        sender.send(data_chunk).await?;
 
         offset_start += data.len() as u64;
         let marker_chunk = DataChunk::new(last_offset, vec![], offset_start);
-        sender
-            .send(marker_chunk)
-            .await?;
+        sender.send(marker_chunk).await?;
 
         if exit.load(Ordering::SeqCst) {
             return Ok(());
@@ -232,8 +231,6 @@ pub async fn simple_download(
     Ok(())
 }
 
- 
-
 pub async fn start_single_task(
     url: &str,
     output_path: &PathBuf,
@@ -244,13 +241,16 @@ pub async fn start_single_task(
     let paused = Arc::new(AtomicBool::new(false));
     let exit = Arc::new(AtomicBool::new(false));
 
-    let retry_size = retry_cont.unwrap_or(3); 
-    info!("retry_size: {}",retry_size as u32);
-     let retry_policy = ExponentialBackoff::builder().build_with_max_retries(retry_size as u32);
-    let cc = reqwest::Client::builder().timeout(Duration::from_secs(4)).build().unwrap();
+    let retry_size = retry_cont.unwrap_or(3);
+    info!("retry_size: {}", retry_size as u32);
+    let retry_policy = ExponentialBackoff::builder().build_with_max_retries(retry_size as u32);
+    let cc = reqwest::Client::builder()
+        .timeout(Duration::from_secs(4))
+        .build()
+        .unwrap();
     let client = ClientBuilder::new(cc)
-            .with(RetryTransientMiddleware::new_with_policy(retry_policy))
-            .build();
+        .with(RetryTransientMiddleware::new_with_policy(retry_policy))
+        .build();
 
     info!("client {:?}", client);
     let resp = client.head(url)
@@ -278,63 +278,72 @@ pub async fn start_single_task(
             }
         }
         info!("url header: {:?}", resp.headers());
-      
+
         let md5 = resp.headers().get("Content-Md5");
-      
+
         let mut download_file_name = output_path.clone();
 
         let status_file = output_path.clone().with_extension(SUFFIX);
         let status_file_bak: PathBuf = status_file.clone();
-        let mut task_info =
-            DownloadTask::new(url,  download_file_name.clone(),file_size, num_threads, chunk_size_limit, retry_cont);
+        let mut task_info = DownloadTask::new(
+            url,
+            download_file_name.clone(),
+            file_size,
+            num_threads,
+            chunk_size_limit,
+            retry_cont,
+        );
 
-        download_file_name =  checkout_filename( download_file_name, status_file.clone(),  &task_info).await;
+        download_file_name =
+            checkout_filename(download_file_name, status_file.clone(), &task_info).await;
 
         task_info.file_name = download_file_name.to_string_lossy().into_owned();
-    
 
         let (sender, receiver): (mpsc::Sender<DataChunk>, mpsc::Receiver<DataChunk>) =
             mpsc::channel(100);
 
-        let (sender_status, receiver_status): (mpsc::Sender<(u64,u64)>, mpsc::Receiver<(u64,u64)>) =
-            mpsc::channel(100);
+        let (sender_status, receiver_status): (
+            mpsc::Sender<(u64, u64)>,
+            mpsc::Receiver<(u64, u64)>,
+        ) = mpsc::channel(100);
 
-        let writer_handle = tokio::spawn(download_save_file(download_file_name.clone(), receiver,  Some(sender_status)));
+        let writer_handle = tokio::spawn(download_save_file(
+            download_file_name.clone(),
+            receiver,
+            Some(sender_status),
+        ));
 
         let download_handle: JoinHandle<Result<(), anyhow::Error>>;
-        let status_handle : JoinHandle<Result<(), anyhow::Error>>;
-        
+        let status_handle: JoinHandle<Result<(), anyhow::Error>>;
+
         let pb = Arc::new(Mutex::new(ProgressBar::new(file_size)));
         {
-            let pb  = pb.lock().unwrap();
-           let style_str = format!( "{:?} {{spinner:.green}} [{{elapsed_precise}}] [{{wide_bar:.cyan/blue}}] {{msg}} {{pos}}/{{len}} ({{eta}})",download_file_name.file_name().unwrap());
+            let pb = pb.lock().unwrap();
+            let style_str = format!( "{:?} {{spinner:.green}} [{{elapsed_precise}}] [{{wide_bar:.cyan/blue}}] {{msg}} {{pos}}/{{len}} ({{eta}})",download_file_name.file_name().unwrap());
 
-            pb .set_style(
-                    ProgressStyle::with_template(&style_str)?
-                .progress_chars("#>-"),
-            );
-           
+            pb.set_style(ProgressStyle::with_template(&style_str)?.progress_chars("#>-"));
         }
 
-        if num_threads > 1 && file_size != 0 && file_size > CHUNK_SIZE_LIMIT && accept_range != false {
+        if num_threads > 1
+            && file_size != 0
+            && file_size > CHUNK_SIZE_LIMIT
+            && accept_range != false
+        {
             info!("Starting multi-threaded download task");
 
             let task_map = Status::init(&status_file, &task_info).await?;
-            let  mut skip = task_info.total_size;
+            let mut skip = task_info.total_size;
             for (start, end) in &task_map {
                 skip -= end - start;
             }
             info!("skip {} , task_map: {}", skip, task_map.len());
-            
+
             {
-                let pb  = pb.lock().unwrap();
+                let pb = pb.lock().unwrap();
                 pb.inc(skip);
             }
 
-            status_handle = tokio::spawn(
-
-            Status::run(status_file_bak, receiver_status, Some(pb))
-            );
+            status_handle = tokio::spawn(Status::run(status_file_bak, receiver_status, Some(pb)));
 
             download_handle = tokio::spawn(DownloadTask::muti_download(
                 task_info.url,
@@ -348,9 +357,7 @@ pub async fn start_single_task(
             ));
         } else {
             info!("Starting download task");
-            status_handle = tokio::spawn(
-                Status::show_display( receiver_status, Some(pb))
-            );
+            status_handle = tokio::spawn(Status::show_display(receiver_status, Some(pb)));
 
             download_handle = tokio::spawn(simple_download(
                 client.clone(),
@@ -362,22 +369,21 @@ pub async fn start_single_task(
         }
 
         // 等待 writer_handle 和 task_handle 完成
-        let (writer_result, download_result, status_result) = tokio::try_join!(writer_handle, download_handle , status_handle)?;
+        let (writer_result, download_result, status_result) =
+            tokio::try_join!(writer_handle, download_handle, status_handle)?;
         download_result?;
         writer_result?;
         status_result?;
 
         // check file
-       
+
         info!("download file {:?} ", download_file_name);
 
         if let Some(value) = md5 {
-           
-            let md5resut =   md5_check(download_file_name.clone()).await?;
+            let md5resut = md5_check(download_file_name.clone()).await?;
             // 比较md5 结果是否一致
-             verify_content_md5(md5resut , value.to_str().unwrap_or(""))?
-                 
-        }   else {
+            verify_content_md5(md5resut, value.to_str().unwrap_or(""))?
+        } else {
             info!("not find Content-md5");
         }
     }

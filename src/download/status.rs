@@ -1,6 +1,6 @@
 use anyhow::{anyhow, Result};
 use bincode::deserialize_from;
-use log::{debug,info, trace, warn};
+use log::{debug, info, trace, warn};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::{path::PathBuf, vec};
@@ -36,7 +36,7 @@ fn merge_chunks(left: &ChunkStatus, right: &ChunkStatus) -> ChunkStatus {
     merged
 }
 
-pub async fn get_task_info<F>(file: &mut F) -> Result<DownloadTask> 
+pub async fn get_task_info<F>(file: &mut F) -> Result<DownloadTask>
 where
     F: tokio::io::AsyncReadExt + Unpin,
 {
@@ -48,7 +48,7 @@ where
     }
     let mut buffer = vec![0; len as usize];
     file.read_exact(&mut buffer).await?;
-    let task_info:DownloadTask =  deserialize_from(&*buffer)?;
+    let task_info: DownloadTask = deserialize_from(&*buffer)?;
     Ok(task_info)
 }
 
@@ -104,8 +104,6 @@ impl Status {
         debug!("end  read file resume chunk ");
         Ok(set)
     }
-
-
 
     pub async fn check_status_info(
         status_file: &PathBuf,
