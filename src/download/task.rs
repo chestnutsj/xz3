@@ -5,7 +5,7 @@ use crate::download::status::Status;
 use log::{debug, info, trace, warn};
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use std::sync::{Arc, Mutex};
@@ -16,8 +16,7 @@ use anyhow::{anyhow, Result};
 use futures_util::StreamExt;
 use indicatif::{ProgressBar, ProgressStyle};
 use reqwest::header::{HeaderValue, USER_AGENT};
-use reqwest::redirect::Policy;
-use reqwest_middleware::{ClientBuilder, ClientWithMiddleware, Middleware};
+use reqwest_middleware::{ClientBuilder, ClientWithMiddleware};
 use reqwest_retry::{policies::ExponentialBackoff, RetryTransientMiddleware};
 use tokio::sync::Semaphore;
 
@@ -210,13 +209,13 @@ pub async fn simple_download(
     }
     let mut stream = resp.bytes_stream();
     let mut offset_start = 0;
-    let mut last_offset = 0;
+
     while let Some(item) = stream.next().await {
         let data = item?;
-        last_offset = offset_start;
+
         let data_chunk = DataChunk::new(offset_start, data.to_vec(), 0);
         sender.send(data_chunk).await?;
-
+        let last_offset = offset_start;
         offset_start += data.len() as u64;
         let marker_chunk = DataChunk::new(last_offset, vec![], offset_start);
         sender.send(marker_chunk).await?;
@@ -322,6 +321,7 @@ pub async fn start_single_task(
             let style_str = format!( "{:?} {{spinner:.green}} [{{elapsed_precise}}] [{{wide_bar:.cyan/blue}}] {{msg}} {{pos}}/{{len}} ({{eta}})",download_file_name.file_name().unwrap());
 
             pb.set_style(ProgressStyle::with_template(&style_str)?.progress_chars("#>-"));
+            pb.tick();
         }
 
         if num_threads > 1

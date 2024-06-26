@@ -7,7 +7,7 @@ use url::Url;
 
 use std::env;
 
-use log::{error, info, warn, LevelFilter};
+use log::{ info, LevelFilter};
 use log4rs::{
     append::console::ConsoleAppender,
     append::file::FileAppender,
@@ -79,7 +79,7 @@ async fn main() -> Result<()> {
 
     let mut log_config = Config::builder().appender(
         Appender::builder()
-            .filter(Box::new(ThresholdFilter::new(log_level)))
+            .filter(Box::new(ThresholdFilter::new(LevelFilter::Debug)))
             .build("stderr", Box::new(stdout_appender)),
     );
     let mut log_build = Root::builder().appender("stderr");

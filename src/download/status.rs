@@ -205,7 +205,7 @@ impl Status {
         }
         if let Some(pb) = pb.as_ref() {
             let pb = pb.lock().unwrap();
-            pb.finish_with_message("download complete");
+            pb.abandon_with_message("download complete");
         }
         info!("remove status file {:?}", status_path.clone());
         remove_file(status_path).await?;
@@ -244,7 +244,7 @@ impl Status {
         info!("status finish");
         if let Some(pb) = pb.as_ref() {
             let pb = pb.lock().unwrap();
-            pb.finish_and_clear();
+            pb.abandon_with_message("download complete");
         }
         Ok(())
     }
