@@ -2,3 +2,4 @@
 pub mod file_handler;
 pub mod status;
 pub mod task;
+pub mod http;
