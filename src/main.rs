@@ -62,7 +62,7 @@ fn extract_filename(args: &Args) -> Result<PathBuf, anyhow::Error> {
 #[tokio::main]
 async fn main() -> Result<()> {
     // 从环境变量获取日志等级，默认为 `warn`
-    let log_level = env::var("LOG_LEVEL").unwrap_or_else(|_| "info".to_string());
+    let log_level = env::var("LOG_LEVEL").unwrap_or_else(|_| "warn".to_string());
     let log_level = match log_level.to_lowercase().as_str() {
         "error" => LevelFilter::Error,
         "warn" => LevelFilter::Warn,
@@ -79,7 +79,7 @@ async fn main() -> Result<()> {
 
     let mut log_config = Config::builder().appender(
         Appender::builder()
-            .filter(Box::new(ThresholdFilter::new(LevelFilter::Debug)))
+            .filter(Box::new(ThresholdFilter::new( log_level)))
             .build("stderr", Box::new(stdout_appender)),
     );
     let mut log_build = Root::builder().appender("stderr");
