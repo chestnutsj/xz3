@@ -7,7 +7,7 @@ use url::Url;
 
 use std::env;
 
-use log::{ info, LevelFilter};
+use log::{info, LevelFilter};
 use log4rs::{
     append::console::ConsoleAppender,
     append::file::FileAppender,
@@ -62,7 +62,7 @@ fn extract_filename(args: &Args) -> Result<PathBuf, anyhow::Error> {
 #[tokio::main]
 async fn main() -> Result<()> {
     // 从环境变量获取日志等级，默认为 `warn`
-    let log_level = env::var("LOG_LEVEL").unwrap_or_else(|_| "warn".to_string());
+    let log_level = env::var("LOG_LEVEL").unwrap_or_else(|_| "info".to_string());
     let log_level = match log_level.to_lowercase().as_str() {
         "error" => LevelFilter::Error,
         "warn" => LevelFilter::Warn,
