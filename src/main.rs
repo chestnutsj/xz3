@@ -11,7 +11,7 @@ use log::{info, LevelFilter};
 use log4rs::{
     append::console::ConsoleAppender,
     append::file::FileAppender,
-    config::{Appender, Config, Root},
+    config::{Appender, Config, Root,Logger},
     encode::pattern::PatternEncoder,
     filter::threshold::ThresholdFilter,
 };
@@ -62,8 +62,8 @@ fn extract_filename(args: &Args) -> Result<PathBuf, anyhow::Error> {
 #[tokio::main]
 async fn main() -> Result<()> {
     // 从环境变量获取日志等级，默认为 `warn`
-    let log_level = env::var("LOG_LEVEL").unwrap_or_else(|_| "warn".to_string());
-    let log_level = match log_level.to_lowercase().as_str() {
+    let log_level_str = env::var("LOG_LEVEL").unwrap_or_else(|_| "warn".to_string());
+    let log_level = match log_level_str.to_lowercase().as_str() {
         "error" => LevelFilter::Error,
         "warn" => LevelFilter::Warn,
         "info" => LevelFilter::Info,
@@ -73,35 +73,35 @@ async fn main() -> Result<()> {
     };
     let args = Args::parse();
     // 配置控制台输出
+    
     let stdout_appender = ConsoleAppender::builder()
         .encoder(Box::new(PatternEncoder::new("{d} - {l} - {m}{n}")))
         .build();
 
-    let mut log_config = Config::builder().appender(
-        Appender::builder()
-            .filter(Box::new(ThresholdFilter::new( log_level)))
-            .build("stderr", Box::new(stdout_appender)),
-    );
-    let mut log_build = Root::builder().appender("stderr");
+    let mut log_config = Config::builder()
+        .appender(Appender::builder()
+        .filter(Box::new(ThresholdFilter::new(log_level)))
+        .build("stdout", Box::new(stdout_appender))) ;
+
+    let mut root_build =    Root::builder().appender("stdout");
     if let Some(logfile) = args.log.clone() {
         // 配置文件输出
         let file_appender = FileAppender::builder()
             .encoder(Box::new(PatternEncoder::new("{d} - {l} - {m}{n}")))
             .build(logfile)
             .unwrap();
+        log_config = log_config.appender(Appender::builder().build("file", Box::new(file_appender)))
+        .logger(Logger::builder()
+        .appender("file")
+        .additive(true)
+        .build("file", LevelFilter::Info));
 
-        log_config = log_config.appender(
-            Appender::builder()
-                .filter(Box::new(ThresholdFilter::new(LevelFilter::Info)))
-                .build("logfile", Box::new(file_appender)),
-        );
-        log_build = log_build.appender("logfile");
+        root_build =  root_build.appender("file");
     }
 
-    let configbuild = log_config.build(log_build.build(log_level)).unwrap();
-
-    // 初始化 log4rs
-    log4rs::init_config(configbuild).unwrap();
+    let log_build = log_config.build( root_build.build(LevelFilter::Info)).unwrap();
+ 
+    log4rs::init_config( log_build).unwrap();
 
     info!("download url :{}", args.url);
     let file_name = extract_filename(&args)?;

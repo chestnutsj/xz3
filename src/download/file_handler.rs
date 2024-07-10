@@ -33,7 +33,7 @@ async fn generate_unique_filename(
     let mut path = original.to_path_buf();
     let mut index = start_index;
     loop {
-        let suffix = format!(" ({})", index);
+        let suffix = format!(".{}", index);
         if let Some(ext) = extension {
             let mut new_ext = String::from(ext);
             new_ext.push_str(&suffix);

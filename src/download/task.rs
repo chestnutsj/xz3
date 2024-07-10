@@ -320,7 +320,7 @@ pub async fn start_single_task(
         {
             match pb.lock() {
                 Ok(pb) => {
-                    let style_str = format!( "{:?} {{spinner:.green}} [{{elapsed_precise}}] [{{wide_bar:.cyan/blue}}] {{msg}} {{pos}}/{{len}} ({{eta}})",download_file_name.file_name());
+                    let style_str = format!( "{} {{spinner:.green}} [{{elapsed_precise}}] [{{wide_bar:.cyan/blue}}] {{msg}} {{pos}}/{{len}} ({{eta}})", task_info.file_name);
 
                     pb.set_style(ProgressStyle::with_template(&style_str)?.progress_chars("#>-"));
                     pb.tick();
