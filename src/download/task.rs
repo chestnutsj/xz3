@@ -240,22 +240,25 @@ pub async fn start_single_task(
     num_threads: usize,
     chunk_size_limit: Option<u64>,
     retry_cont: Option<usize>,
-) -> Result<()> {
+) -> Result<DownloadTask, anyhow::Error> {
     let paused = Arc::new(Notify::new());
     let exit = Arc::new(Notify::new());
 
     let retry_size = retry_cont.unwrap_or(3);
     info!("retry_size: {}", retry_size as u32);
     let retry_policy = ExponentialBackoff::builder().build_with_max_retries(retry_size as u32);
-    let cc = reqwest::Client::builder().build()?;
+    let cc = reqwest::Client::builder()
+        .connect_timeout(Duration::from_secs(3))
+        .build()?;
     let client = ClientBuilder::new(cc)
         .with(RetryTransientMiddleware::new_with_policy(retry_policy))
         .build();
 
-    let resp = client.head(url)
-    .header(USER_AGENT, HeaderValue::from_static("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/100.0.4896.81 Safari/537.36"))
-    .timeout(Duration::from_secs(10))
-    .send().await?;
+    let req = client.head(url)
+    .header(USER_AGENT, HeaderValue::from_static("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/100.0.4896.81 Safari/537.36"));
+    debug!("req {:?}", req);
+    let resp = req.send().await?;
+    debug!("has resp {:?}", resp);
     if resp.status().is_success() {
         info!("url {}", resp.url());
         debug!("get resp {:?}", resp.headers());
@@ -357,9 +360,9 @@ pub async fn start_single_task(
             }
 
             status_handle = tokio::spawn(Status::run(status_file_bak, receiver_status, Some(pb)));
-
+            let url = task_info.url.clone();
             download_handle = tokio::spawn(DownloadTask::muti_download(
-                task_info.url,
+                url,
                 task_info.num_threads,
                 task_info.retry_count,
                 task_map,
@@ -371,12 +374,13 @@ pub async fn start_single_task(
         } else {
             info!("Starting download task");
             status_handle = tokio::spawn(Status::show_display(receiver_status, Some(pb)));
+            let url = task_info.url.clone();
             download_handle = tokio::spawn(async move {
                 let mut counter = 0;
                 DownloadTask::download_stream(
                     &mut counter,
                     None,
-                    task_info.url,
+                    url,
                     client.clone(),
                     sender,
                     exit.clone(),
@@ -404,6 +408,8 @@ pub async fn start_single_task(
         } else {
             info!("not find Content-md5");
         }
+        Ok(task_info)
+    } else {
+        Err(anyhow!("{:?}", resp.status()))
     }
-    Ok(())
 }

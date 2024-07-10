@@ -1,17 +1,18 @@
 mod download;
 use anyhow::{anyhow, Result};
 use clap::Parser;
+use download::file_handler::is_m3u_or_m3u8_file;
 use download::task;
 use std::path::PathBuf;
 use url::Url;
 
 use std::env;
 
-use log::{info, LevelFilter};
+use log::{error, info, LevelFilter};
 use log4rs::{
     append::console::ConsoleAppender,
     append::file::FileAppender,
-    config::{Appender, Config, Root,Logger},
+    config::{Appender, Config, Logger, Root},
     encode::pattern::PatternEncoder,
     filter::threshold::ThresholdFilter,
 };
@@ -73,48 +74,62 @@ async fn main() -> Result<()> {
     };
     let args = Args::parse();
     // 配置控制台输出
-    
+
     let stdout_appender = ConsoleAppender::builder()
         .encoder(Box::new(PatternEncoder::new("{d} - {l} - {m}{n}")))
         .build();
 
-    let mut log_config = Config::builder()
-        .appender(Appender::builder()
-        .filter(Box::new(ThresholdFilter::new(log_level)))
-        .build("stdout", Box::new(stdout_appender))) ;
+    let mut log_config = Config::builder().appender(
+        Appender::builder()
+            .filter(Box::new(ThresholdFilter::new(log_level)))
+            .build("stdout", Box::new(stdout_appender)),
+    );
 
-    let mut root_build =    Root::builder().appender("stdout");
+    let mut root_build = Root::builder().appender("stdout");
     if let Some(logfile) = args.log.clone() {
         // 配置文件输出
         let file_appender = FileAppender::builder()
             .encoder(Box::new(PatternEncoder::new("{d} - {l} - {m}{n}")))
             .build(logfile)
             .unwrap();
-        log_config = log_config.appender(Appender::builder().build("file", Box::new(file_appender)))
-        .logger(Logger::builder()
-        .appender("file")
-        .additive(true)
-        .build("file", LevelFilter::Info));
-
-        root_build =  root_build.appender("file");
+        log_config = log_config.appender(
+            Appender::builder()
+                .filter(Box::new(ThresholdFilter::new(LevelFilter::Info)))
+                .build("file", Box::new(file_appender)),
+        );
+        root_build = root_build.appender("file");
     }
 
-    let log_build = log_config.build( root_build.build(LevelFilter::Info)).unwrap();
- 
-    log4rs::init_config( log_build).unwrap();
+    let log_build = log_config
+        .build(root_build.build(LevelFilter::Trace))
+        .unwrap();
 
-    info!("download url :{}", args.url);
+    log4rs::init_config(log_build).unwrap();
+
+    info!("download url {}", args.url);
     let file_name = extract_filename(&args)?;
     info!("download file name {:?}", file_name);
 
-    task::start_single_task(
+    match task::start_single_task(
         &args.url,
         &file_name,
         args.threadsize,
         None,
         Some(args.max_retry),
     )
-    .await?;
+    .await
+    {
+        Ok(task_info) => {
+            info!("download success {}", task_info.file_name);
+            if is_m3u_or_m3u8_file(task_info.file_name) {
+                info!("m3u file has download");
+            }
+        }
+        Err(e) => {
+            error!("{} download failed {} ", args.url, e);
+            return Err(e);
+        }
+    }
 
     // let mut manager = DownloadManager::new();
 

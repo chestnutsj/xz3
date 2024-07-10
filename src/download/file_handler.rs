@@ -1,13 +1,14 @@
+use crate::download::{status::get_task_info, task::DownloadTask};
 use anyhow::{anyhow, Result};
 use base64::{engine::general_purpose, Engine as _};
 use log::{info, trace};
+use std::fs::File;
+use std::io::Read;
 use std::path::PathBuf;
 use tokio::fs;
 use tokio::fs::OpenOptions;
 use tokio::io::{AsyncBufReadExt, AsyncSeekExt, AsyncWriteExt, BufReader};
 use tokio::sync::mpsc;
-
-use crate::download::{status::get_task_info, task::DownloadTask};
 
 pub struct DataChunk {
     pub offset: u64,
@@ -197,4 +198,20 @@ pub fn verify_content_md5(
         }
         Err(e) => Err(anyhow!(e)),
     }
+}
+
+pub fn is_m3u_or_m3u8_file(file_path: String) -> bool {
+    const BUFFER_SIZE: usize = 7; // 读取文件的前 7 个字节
+    let mut buffer = [0; BUFFER_SIZE];
+
+    if let Ok(mut file) = File::open(file_path) {
+        if let Ok(bytes_read) = file.read(&mut buffer) {
+            if bytes_read >= BUFFER_SIZE {
+                if &buffer[0..BUFFER_SIZE] == b"#EXTM3U" {
+                    return true; // 是 .m3u 或 .m3u8 文件
+                }
+            }
+        }
+    }
+    false
 }
