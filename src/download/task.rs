@@ -38,7 +38,7 @@ pub struct DownloadTask {
 
 impl DownloadTask {
     pub fn new(
-        url: &str,
+        url: String,
         file_name: PathBuf,
         total_size: u64,
         num_threads: usize,
@@ -46,7 +46,7 @@ impl DownloadTask {
         retry_cont: Option<usize>,
     ) -> Self {
         DownloadTask {
-            url: url.to_string(),
+            url: url,
             file_name: file_name.to_string_lossy().into_owned(),
             total_size,
             chunk_size: chunk_size_limit.unwrap_or(CHUNK_SIZE_LIMIT),
@@ -76,6 +76,7 @@ impl DownloadTask {
         sender: mpsc::Sender<DataChunk>,
         exit: Arc<Notify>,
         paused: Arc<Notify>,
+        resume: Arc<Notify>,
     ) -> Result<(), anyhow::Error> {
         let mut req = client.get(&url);
         let mut flush_immediate = false;
@@ -102,8 +103,16 @@ impl DownloadTask {
             tokio::select! {
                 _ = paused.notified() => {
                     warn!("Download paused, waiting for resume");
-                    paused.notified().await;
-                    warn!("Download resumed");
+                    tokio::select! { 
+                        _ = exit.notified() => {
+                            warn!("Download exited");
+                            return Ok(());
+                        },
+                        _ = resume.notified()=> {
+                            warn!("Download resumed");
+                            continue;
+                        }
+                    }
                 },
                 _ = exit.notified() => {
                     warn!("Download task exited");
@@ -147,6 +156,7 @@ impl DownloadTask {
         sender: mpsc::Sender<DataChunk>,
         exit: Arc<Notify>,
         paused: Arc<Notify>,
+        resume:  Arc<Notify>,
     ) -> Result<(), anyhow::Error> {
         let _permit = semaphore.acquire_owned().await?;
 
@@ -156,15 +166,24 @@ impl DownloadTask {
             tokio::select! {
                 _ = paused.notified() => {
                     warn!("Download paused, waiting for resume");
-                    paused.notified().await;
-                    warn!("Download resumed");
+                    tokio::select! { 
+                        _ = exit.notified() => {
+                            warn!("Download exited");
+                            sender.send(DataChunk::new(start, vec![], offset_start)).await?;
+                            return Ok(());
+                        },
+                        _ = resume.notified()=> {
+                            warn!("Download resumed");
+                            continue;
+                        }
+                    }
                 },
                 _ = exit.notified() => {
                     warn!("Download task exited");
                     sender.send(DataChunk::new(start, vec![], offset_start)).await?;
                     return Ok(());
                 },
-                res = Self::download_stream(&mut offset_start, Some(end), url.clone(), client.clone(), sender.clone(), exit.clone(), paused.clone()) =>{
+                res = Self::download_stream(&mut offset_start, Some(end), url.clone(), client.clone(), sender.clone(), exit.clone(), paused.clone(),resume.clone()) =>{
                     match res {
                         Ok(_) => {
                             if offset_start >= end {break;}
@@ -206,6 +225,7 @@ impl DownloadTask {
         client: ClientWithMiddleware,
         sender: mpsc::Sender<DataChunk>,
         paused: Arc<Notify>,
+        resume: Arc<Notify>,
         exit: Arc<Notify>,
     ) -> Result<()> {
         let mut tasks = vec![];
@@ -223,6 +243,7 @@ impl DownloadTask {
                 sender.clone(),
                 exit.clone(),
                 paused.clone(),
+                resume.clone(),
             ));
             tasks.push(task);
         }
@@ -235,14 +256,17 @@ impl DownloadTask {
 }
 
 pub async fn start_single_task(
-    url: &str,
+    url: String,
     output_path: &PathBuf,
     num_threads: usize,
     chunk_size_limit: Option<u64>,
     retry_cont: Option<usize>,
+    paused:  Arc<Notify>,
+    resume:  Arc<Notify>,
+    exit: Arc<Notify>,
 ) -> Result<DownloadTask, anyhow::Error> {
-    let paused = Arc::new(Notify::new());
-    let exit = Arc::new(Notify::new());
+    //let paused = Arc::new(Notify::new());
+    // let exit = Arc::new(Notify::new());
 
     let retry_size = retry_cont.unwrap_or(3);
     info!("retry_size: {}", retry_size as u32);
@@ -254,7 +278,7 @@ pub async fn start_single_task(
         .with(RetryTransientMiddleware::new_with_policy(retry_policy))
         .build();
 
-    let req = client.head(url)
+    let req = client.head(url.clone())
     .header(USER_AGENT, HeaderValue::from_static("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/100.0.4896.81 Safari/537.36"));
     debug!("req {:?}", req);
     let resp = req.send().await?;
@@ -369,6 +393,7 @@ pub async fn start_single_task(
                 client.clone(),
                 sender,
                 paused.clone(),
+                resume.clone(),
                 exit.clone(),
             ));
         } else {
@@ -385,6 +410,7 @@ pub async fn start_single_task(
                     sender,
                     exit.clone(),
                     paused.clone(),
+                    resume.clone(),
                 )
                 .await
             });

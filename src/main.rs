@@ -5,14 +5,15 @@ use download::file_handler::is_m3u_or_m3u8_file;
 use download::task;
 use std::path::PathBuf;
 use url::Url;
-
+use std::sync::Arc;
+use tokio::sync::Notify;
 use std::env;
 
 use log::{error, info, LevelFilter};
 use log4rs::{
     append::console::ConsoleAppender,
     append::file::FileAppender,
-    config::{Appender, Config, Logger, Root},
+    config::{Appender, Config, Root},
     encode::pattern::PatternEncoder,
     filter::threshold::ThresholdFilter,
 };
@@ -109,13 +110,18 @@ async fn main() -> Result<()> {
     info!("download url {}", args.url);
     let file_name = extract_filename(&args)?;
     info!("download file name {:?}", file_name);
-
+    let exit_ctl =  Arc::new(Notify::new());
+    let paused_ctl = Arc::new(Notify::new());
+    let resume_ctl = Arc::new(Notify::new());
     match task::start_single_task(
-        &args.url,
+        args.url.clone(),
         &file_name,
         args.threadsize,
         None,
         Some(args.max_retry),
+        paused_ctl.clone(),
+        resume_ctl.clone(),
+        exit_ctl.clone(),
     )
     .await
     {
