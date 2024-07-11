@@ -20,5 +20,6 @@ reqwest = { version = "0.12.4", features = ["json", "stream"] }
 reqwest-middleware = "0.3.1"
 reqwest-retry = "0.5.0"
 serde = { version = "1.0.203", features = ["derive"] }
+sled = "0.34.7"
 tokio = { version = "1.38.0", features = ["full"] }
 url = "2.5.2"

@@ -1,13 +1,15 @@
 mod download;
+mod mgr;
 use anyhow::{anyhow, Result};
 use clap::Parser;
 use download::file_handler::is_m3u_or_m3u8_file;
 use download::task;
+use std::env;
 use std::path::PathBuf;
-use url::Url;
 use std::sync::Arc;
 use tokio::sync::Notify;
-use std::env;
+use url::Url;
+use mgr::m3u;
 
 use log::{error, info, LevelFilter};
 use log4rs::{
@@ -36,27 +38,21 @@ struct Args {
     log: Option<PathBuf>,
 
     /// Sets the URL to download from
-    url: String,
+    url: Url,
 }
 
 fn extract_filename(args: &Args) -> Result<PathBuf, anyhow::Error> {
     let name = if let Some(name) = &args.name {
         name.clone()
     } else {
-        if let Ok(parsed_url) = Url::parse(&args.url) {
-            // 安全地处理URL路径段
-            if let Some(path_segments) = parsed_url.path_segments() {
-                if let Some(file_name) = path_segments.last() {
-                    PathBuf::from(file_name)
-                } else {
-                    return Err(anyhow!("can't get url from url"));
-                }
-            } else {
-                return Err(anyhow!("无法解析URL路径段"));
-            }
+        let p =   &args.url.path();
+        let fll  =  PathBuf::from(p);
+        if let Some(n) = fll.file_name() {
+            PathBuf::from( n.to_str().unwrap()) 
         } else {
-            return Err(anyhow!("无效的URL"));
+            return Err(anyhow!("Invalid URL"));
         }
+    
     };
     Ok(name)
 }
@@ -110,11 +106,11 @@ async fn main() -> Result<()> {
     info!("download url {}", args.url);
     let file_name = extract_filename(&args)?;
     info!("download file name {:?}", file_name);
-    let exit_ctl =  Arc::new(Notify::new());
+    let exit_ctl = Arc::new(Notify::new());
     let paused_ctl = Arc::new(Notify::new());
     let resume_ctl = Arc::new(Notify::new());
     match task::start_single_task(
-        args.url.clone(),
+        args.url.to_string().clone(),
         &file_name,
         args.threadsize,
         None,
@@ -127,8 +123,9 @@ async fn main() -> Result<()> {
     {
         Ok(task_info) => {
             info!("download success {}", task_info.file_name);
-            if is_m3u_or_m3u8_file(task_info.file_name) {
+            if is_m3u_or_m3u8_file(task_info.file_name.clone()) {
                 info!("m3u file has download");
+                m3u::Start( PathBuf::from(&task_info.file_name), args.url)?;
             }
         }
         Err(e) => {

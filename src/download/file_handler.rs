@@ -1,14 +1,14 @@
 use crate::download::{status::get_task_info, task::DownloadTask};
 use anyhow::{anyhow, Result};
 use base64::{engine::general_purpose, Engine as _};
-use log::{info, trace};
+use log::{error, info, trace};
 use std::fs::File;
 use std::io::Read;
 use std::path::PathBuf;
 use tokio::fs;
 use tokio::fs::OpenOptions;
 use tokio::io::{AsyncBufReadExt, AsyncSeekExt, AsyncWriteExt, BufReader};
-use tokio::sync::mpsc;
+use tokio::sync::mpsc::{self, error};
 
 pub struct DataChunk {
     pub offset: u64,
@@ -118,39 +118,56 @@ pub async fn download_save_file(
 ) -> Result<(), anyhow::Error> {
     let sender_ref = status.as_ref();
     let filename = output.clone();
-    let mut f = OpenOptions::new()
+
+
+    if let Some(parent) = filename.parent() {
+        if let Err(e) = fs::create_dir_all(parent).await {
+            return Err(anyhow::anyhow!("Failed to create directory: {}", e));
+        } else {
+            info!("create dir success {:?}", parent);
+        }
+    }
+
+    match OpenOptions::new()
         .write(true)
         .create(true)
         .open(filename)
-        .await?;
-
-    loop {
-        match receiver.recv().await {
-            Some(data) => {
-                if data.flush != 0 {
-                    f.flush().await?;
-                    if let Some(sender) = sender_ref {
-                        trace!("sync flush data {} {}", data.offset, data.flush);
-                        sender.send((data.offset, data.flush)).await?;
+        .await
+    {
+        Ok(mut f) => {
+            loop {
+                match receiver.recv().await {
+                    Some(data) => {
+                        if data.flush != 0 {
+                            f.flush().await?;
+                            if let Some(sender) = sender_ref {
+                                trace!("sync flush data {} {}", data.offset, data.flush);
+                                sender.send((data.offset, data.flush)).await?;
+                            }
+                        }
+                        if data.data.is_empty() {
+                            continue;
+                        }
+                        {
+                            trace!("sync write data {} ", data.offset);
+                            f.seek(tokio::io::SeekFrom::Start(data.offset)).await?;
+                            f.write_all(&data.data).await?;
+                        }
+                    }
+                    None => {
+                        break;
                     }
                 }
-                if data.data.is_empty() {
-                    continue;
-                }
-                {
-                    trace!("sync write data {} ", data.offset);
-                    f.seek(tokio::io::SeekFrom::Start(data.offset)).await?;
-                    f.write_all(&data.data).await?;
-                }
             }
-            None => {
-                break;
-            }
+            info!("save file success {:?}", output);
+            f.flush().await?;
+            Ok(())
+        }
+        Err(e) => {
+            error!("open failed {}", e);
+            return Err(anyhow!(e));
         }
     }
-    info!("save file success {:?}", output);
-    f.flush().await?;
-    Ok(())
 }
 
 pub async fn md5_check(file_name: PathBuf) -> Result<Vec<u8>> {
