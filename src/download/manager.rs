@@ -73,7 +73,7 @@ impl DownloadManager {
     pub fn check_is_exists<P: AsRef<std::path::Path>>(path: P) -> bool {
         let mut path_buf = path.as_ref().to_path_buf().clone();
         if !path_buf.ends_with(DEFAULT_STATUS) {
-            path_buf.push(DEFAULT_STATUS);
+            path_buf.set_extension(DEFAULT_STATUS);
         }
 
         if fs::metadata(&path_buf).is_ok() {
@@ -88,8 +88,9 @@ impl DownloadManager {
         if let Some(path) = path {
             let mut path_buf = PathBuf::from(path.clone());
             if !path_buf.ends_with(DEFAULT_STATUS) {
-                path_buf.push(DEFAULT_STATUS);
+                path_buf.set_extension(DEFAULT_STATUS);
             }
+            info!("open db: {:?}", path_buf);
             let db = sled::open(path_buf)?;
             let mut mgr = DownloadManager {
                 tasks: Arc::new(RwLock::new(HashMap::new())),
@@ -270,7 +271,7 @@ impl DownloadManager {
             handle: task_handle,
             info: i,
         };
-
+        info!("save task info{:?}", i_b.clone().url);
         match self.tasks.write() {
             Ok(mut locked) => {
                 locked.insert(url.clone(), ctrl);

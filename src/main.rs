@@ -31,12 +31,15 @@ struct Args {
     threadsize: usize,
     /// Set the retry time
     #[arg(short, long, default_value = "10")]
-    max_retry: usize,
+    retry_max: usize,
 
     /// Sets the log directory
     #[arg(short, long)]
     log: Option<PathBuf>,
 
+    /// Sets the URL to download from
+    #[arg(short,long)]
+    m3u8: String,
     /// Sets the URL to download from
     url: Url,
 }
@@ -114,7 +117,7 @@ async fn main() -> Result<()> {
         &file_name,
         args.threadsize,
         None,
-        Some(args.max_retry),
+        Some(args.retry_max),
         paused_ctl.clone(),
         resume_ctl.clone(),
         exit_ctl.clone(),
@@ -125,7 +128,7 @@ async fn main() -> Result<()> {
             info!("download success {}", task_info.file_name);
             if is_m3u_or_m3u8_file(task_info.file_name.clone()) {
                 info!("m3u file has download");
-                m3u::Start( PathBuf::from(&task_info.file_name), args.url)?;
+                m3u::Start( PathBuf::from(&task_info.file_name), args.url).await?;
             }
         }
         Err(e) => {
